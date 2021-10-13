@@ -1,6 +1,6 @@
 # GenericML_blog_post
 
-R code for the Medium blog post: Not Merely Averages: Using Machine Learning to Estimate Heterogeneous Treatment Effects (CATE, BLP, GATES, CLAN)
+R code for the Medium blog post: Not Merely Averages: Using Machine Learning to Estimate Heterogeneous Treatment Effects (CATE, BLP, GATES, CLAN).
 
 You can find the code for the beta R package GenericML by Max Welz, Andreas Alfons, Mert Demirer, and Victor Chernozhukov [here](https://github.com/mwelz/GenericML/).
 
