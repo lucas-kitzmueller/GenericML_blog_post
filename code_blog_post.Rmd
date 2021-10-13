@@ -1,0 +1,126 @@
+---
+title: "GenericML blog post"
+author: "Lucas Kitzmueller"
+date: "10/12/2021"
+output: html_document
+---
+
+This code very closely follows the example from https://github.com/mwelz/GenericML/. All credit for the implementation of the method goes to them.
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+
+# SET UP
+#install.packages("devtools")
+#devtools::install_github("mwelz/GenericML") 
+#note that the package may also be available on CRAN by the time you are reading this
+library(GenericML)
+library(DescTools) #only used for winsorizing
+
+# DATA GENERATION
+
+# Set seed to make data generation reproducible
+set.seed(1)
+
+# Number of students
+num.obs  <- 1000
+
+# Number of baseline characteristics collected
+num.vars <- 20
+
+# Random treatment assignment (50% are in treatment, 50% in control)
+D <- rbinom(num.obs, 1, 0.5)
+
+# Randomly generate baseline characteristics
+Z <- mvtnorm::rmvnorm(num.obs, mean = rep(0, num.vars), sigma = diag(num.vars))
+colnames(Z) <- paste0("z", 1:num.vars)
+
+# Average Treatment Effect (ATE)
+ATE <- 5
+
+# Heterogeneous Treatment Effects (HTE) 
+HTE <- (abs(Z[,1])^1.1)+ ((Z[,2] * Z[,3]) / (Z[,4]+3)) + (Z[,5]+1) + (5*Z[,6]) + (Z[,7]*(2*Z[,8]+3)) + rnorm(num.obs, 0, 1)
+HTE <- Winsorize(HTE-mean(HTE))
+
+# Counterfactual outcomes
+Y0 <- rnorm(num.obs, mean = 50, sd = 10)
+Y1 <- Y0 + ATE + HTE
+
+# Observed outcome
+Y  <- ifelse(D == 1, Y1, Y0)
+```
+
+```{r apply_genericML}
+
+# FUNCTION ARGUMENTS
+
+# Specify the considered learners 
+learners.genericML <- c("mlr3::lrn('kknn')",
+                        "mlr3::lrn('svm')",
+                        "mlr3::lrn('ranger', num.trees = 500)",
+                        "mlr3::lrn('cv_glmnet')") 
+
+# quantile cutoffs for the GATES grouping of the estimated CATEs
+quantile.cutoffs <- c(0.2, 0.4, 0.6, 0.8) # 20%, 40%, 60%, 80% quantiles
+
+# Since treatment was randomly assigned in our case, the propensity score is constant 50%.
+learner.propensity.score <- rep(0.5,num.obs)
+
+# Specify the chracteristics that should be used for the CLAN
+Z_CLAN <- Z
+
+# Set the number of splits
+num.splits  <- 100
+
+# APPLY GENERIC ML FUNCTION
+genML <- GenericML(Z = Z, D = D, Y = Y,
+                   learner.propensity.score = learner.propensity.score,
+                   learners.genericML = learners.genericML,
+                   num.splits = num.splits,
+                   Z_CLAN = Z_CLAN,
+                   quantile.cutoffs = quantile.cutoffs)
+
+```
+
+```{r results_1}
+# CHOOSING THE BEST ML METHOD
+genML$best.learners$lambda.overview
+```
+
+```{r results_2}
+# BLP
+round(genML$VEIN$best.learners$BLP, 3)
+```
+
+
+```{r results_3}
+# GATES
+plot(genML, type = "GATES", title = "Sorted Group Average Treatment Effects (GATES)")
+ggsave("figs/GATES.png",width = 17, height = 11,units = "cm")
+```
+
+```{r results_4, warning=FALSE}
+# GATES
+plot(genML, type = "CLAN", CLAN.variable = "z7", title = "CLAN of baseline student test scores'", limits = c(-2,2))
+```
+
+```{r results_5, warning=FALSE}
+# GATES
+plot(genML, type = "CLAN", CLAN.variable = "z10", title = "CLAN of variable not inlcuded in HTE", limits = c(-2,2))
+```
+
+```{r results_6, warning=FALSE}
+library(ggpubr)
+a <- plot(genML, type = "CLAN", CLAN.variable = "z7", 
+          title = "CLAN of baseline student test scores", limits = c(-2,2))
+b <- plot(genML, type = "CLAN", CLAN.variable = "z10", 
+          title = "CLAN of variable not in HTE", limits = c(-2,2))
+p <- ggarrange(a, b, 
+              labels = c("",""),
+              ncol = 2, nrow = 1,
+              common.legend = TRUE,
+              legend = "bottom")
+p
+ggsave("figs/CLAN.png",width = 17, height = 11,units = "cm")
+```
+
